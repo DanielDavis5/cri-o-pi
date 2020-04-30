@@ -1,6 +1,6 @@
 # CRI-O-PI
 
-Builds CRO-O using the Raspberry Pi toolchain.
+Builds CRI-O using the Raspberry Pi toolchain.
 
 ## How to build
 

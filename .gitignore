@@ -1,0 +1,8 @@
+*
+
+!.gitignore
+!readme.md
+!src/
+!src/prepare
+!src/build
+!src/install

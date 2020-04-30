@@ -1,0 +1,167 @@
+#!/bin/sh
+
+set -eu
+
+usage() {
+    cat <<EOF
+Creates artifacts from sources.
+
+Usage: build [option] <GOARCH> <GOARM>
+
+GOARM/GOARCH:
+  GO cross compilation variables for ARM; see
+https://github.com/golang/go/wiki/GoArm.
+
+Options:
+    -C DIRECTORY, --directory=DIRECTORY
+                            Change to DIRECTORY before doing anything.
+    --clean                 Delete existing files.
+    -h, --help              Print this message.
+    --release=VERSION       Create a release.
+    --installer=PATH        Path to the install script to include in release.
+                            (Default:=install)
+
+EOF
+    return 0
+}
+
+if ! OPTS=$(getopt -o hC: -l help,directory:,clean,release:,installer: -- "$@"); then
+    usage
+    exit 1
+fi
+
+eval set -- "$OPTS"
+
+while :; do
+    case "$1" in
+    -h | --help)
+        usage
+        exit 0
+        ;;
+
+    -C | --directory)
+        DEST="$2"
+        shift 2
+        ;;
+
+    --clean)
+        CLEAN=true
+        shift
+        ;;
+
+    --release)
+        RELEASE=true
+        VERSION="$2"
+        shift 2
+        ;;
+
+    --installer)
+        INSTALLER="$2"
+        shift 2
+        ;;
+
+    --)
+        shift
+        break
+        ;;
+    esac
+done
+
+if [ $# -eq 0 ]; then
+    echo 'error: bad args, try "build --help"'
+    exit 1
+fi
+
+case "$1" in
+arm)
+    if [ $# -lt 2 ]; then
+        echo "error: GOARM not specified."
+        exit 1
+    elif [ ! "$2" = '5' ] && [ ! "$2" = '6' ] && [ ! "$2" = '7' ]; then
+        echo "error: Invalid GOARM value: $2"
+        exit 1
+    fi
+    ARM_ARCH=$1
+    GOARM=$2
+    shift 2
+    ;;
+
+arm64)
+    ARM_ARCH=$1
+    shift
+    ;;
+
+*)
+    echo 'error: invalid GOARCH value: $1'
+    exit 1
+    ;;
+esac
+
+if [ $# -ne 0 ]; then
+    echo 'error: bad args, try "build --help"'
+    exit 1
+fi
+
+: "${DEST:=.}"
+: "${CLEAN:=false}"
+: "${RELEASE:=false}"
+: "${VERSION:=dev}"
+: "${INSTALLER:=install}"
+
+cd $DEST
+
+TOOLS_PATH="tools"
+CRIO_PATH="cri-o"
+TARG_CRIO="crio.cross.linux.$ARM_ARCH"
+TARG_CRIO_STATUS='crio-status'
+TARG_PINNS='pinns'
+
+if [ $CLEAN = 'true' ]; then
+    make -C "$CRIO_PATH" clean
+fi
+
+env GOARM=$GOARM make -C "$CRIO_PATH" \
+    "bin/${TARG_CRIO}" \
+    "bin/${TARG_CRIO_STATUS}"
+
+mv "${CRIO_PATH}/bin/${TARG_CRIO}" \
+    "${CRIO_PATH}/bin/crio"
+
+PINNS_TOOLS_PREFIX="../../${TOOLS_PATH}/arm-bcm2708/arm-rpi-4.9.3-linux-gnueabihf/bin/arm-linux-gnueabihf-"
+make -C "$CRIO_PATH" \
+    CC="${PINNS_TOOLS_PREFIX}gcc" \
+    STRIP="${PINNS_TOOLS_PREFIX}strip" \
+    "bin/${TARG_PINNS}" \
+    'docs'
+
+if [ $RELEASE = 'true' ]; then
+    ARCHIVE_NAME="crio-pi-v$VERSION"
+    ARCHIVE="$ARCHIVE_NAME.tar.gz"
+    ARCHIVE_TEMP="~$ARCHIVE_NAME"
+
+    if [ $CLEAN = 'true' ] && [ -e $ARCHIVE ]; then
+        rm $ARCHIVE
+    fi
+
+    mkdir $ARCHIVE_TEMP
+
+    mkdir "$ARCHIVE_TEMP/bin"
+    cp ${CRIO_PATH}/bin/* "$ARCHIVE_TEMP/bin"
+
+    mkdir "$ARCHIVE_TEMP/docs"
+    $(cd ${CRIO_PATH}/docs && ls |
+        grep [1-8]$ |
+        xargs cp -t "../../$ARCHIVE_TEMP/docs")
+
+    mkdir -p "$ARCHIVE_TEMP/contrib/systemd"
+    cp ${CRIO_PATH}/contrib/systemd/* "$ARCHIVE_TEMP/contrib/systemd"
+
+    cp -r "${CRIO_PATH}/completions" $ARCHIVE_TEMP
+    cp "${CRIO_PATH}/crio-umount.conf" $ARCHIVE_TEMP
+    cp "${CRIO_PATH}/crictl.yaml" $ARCHIVE_TEMP
+    cp "$INSTALLER" "$ARCHIVE_TEMP"
+
+    tar -czvf $ARCHIVE --transform s/^~// --show-transformed $ARCHIVE_TEMP
+
+    rm -r $ARCHIVE_TEMP
+fi

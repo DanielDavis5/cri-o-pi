@@ -1,0 +1,54 @@
+#!/bin/sh
+
+set -eu
+
+: "${CONF_OVERRIDES:=}"
+: "${DESTDIR:=}"
+: "${PREFIX:=${DESTDIR}/usr/local}"
+: "${BINDIR:=${PREFIX}/bin}"
+: "${MANDIR:=${PREFIX}/share/man}"
+: "${ETCDIR:=${DESTDIR}/etc}"
+: "${ETCDIR_CRIO:=${ETCDIR}/crio}"
+: "${DATAROOTDIR:=${PREFIX}/share/containers}"
+: "${CRICTL_CONFIG_DIR:=${DESTDIR}/etc}"
+: "${BASHINSTALLDIR:=${PREFIX}/share/bash-completion/completions}"
+: "${FISHINSTALLDIR:=${PREFIX}/share/fish/completions}"
+: "${ZSHINSTALLDIR:=${PREFIX}/share/zsh/site-functions}"
+: "${OCIUMOUNTINSTALLDIR:=${PREFIX}/share/oci-umount/oci-umount.d}"
+
+if [ -x "$(command -v selinuxenabled)" ]; then
+    SELINUXOPT=$(echo -Z)
+else
+    SELINUXOPT=''
+fi
+
+bin/crio -d "" --config="" $CONF_OVERRIDES config >crio.conf
+
+install ${SELINUXOPT} -D -m 755 bin/crio $BINDIR/crio
+install ${SELINUXOPT} -D -m 755 bin/crio-status $BINDIR/crio-status
+install ${SELINUXOPT} -D -m 755 bin/pinns $BINDIR/pinns
+
+install ${SELINUXOPT} -d -m 755 $MANDIR/man5
+install ${SELINUXOPT} -d -m 755 $MANDIR/man8
+$(cd docs && ls | grep 5$ | xargs install ${SELINUXOPT} -m 644 -t $MANDIR/man5)
+$(cd docs && ls | grep 8$ | xargs install ${SELINUXOPT} -m 644 -t $MANDIR/man8)
+
+install ${SELINUXOPT} -d $DATAROOTDIR/oci/hooks.d
+install ${SELINUXOPT} -d $ETCDIR_CRIO/crio.conf.d
+install ${SELINUXOPT} -D -m 644 crio.conf $ETCDIR_CRIO/crio.conf
+install ${SELINUXOPT} -D -m 644 crio-umount.conf $OCIUMOUNTINSTALLDIR/crio-umount.conf
+install ${SELINUXOPT} -D -m 644 crictl.yaml $CRICTL_CONFIG_DIR
+
+install ${SELINUXOPT} -d -m 755 ${BASHINSTALLDIR}
+install ${SELINUXOPT} -d -m 755 ${FISHINSTALLDIR}
+install ${SELINUXOPT} -d -m 755 ${ZSHINSTALLDIR}
+install ${SELINUXOPT} -D -m 644 -t ${BASHINSTALLDIR} completions/bash/crio
+install ${SELINUXOPT} -D -m 644 -t ${FISHINSTALLDIR} completions/fish/crio.fish
+install ${SELINUXOPT} -D -m 644 -t ${ZSHINSTALLDIR} completions/zsh/_crio
+install ${SELINUXOPT} -D -m 644 -t ${BASHINSTALLDIR} completions/bash/crio-status
+install ${SELINUXOPT} -D -m 644 -t ${FISHINSTALLDIR} completions/fish/crio-status.fish
+install ${SELINUXOPT} -D -m 644 -t ${ZSHINSTALLDIR} completions/zsh/_crio-status
+
+install ${SELINUXOPT} -D -m 644 contrib/systemd/crio.service $PREFIX/lib/systemd/system/crio.service
+install ${SELINUXOPT} -D -m 644 contrib/systemd/crio-shutdown.service $PREFIX/lib/systemd/system/crio-shutdown.service
+install ${SELINUXOPT} -D -m 644 contrib/systemd/crio-wipe.service $PREFIX/lib/systemd/system/crio-wipe.service

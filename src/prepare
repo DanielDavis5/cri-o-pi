@@ -1,0 +1,87 @@
+#!/bin/sh
+
+set -eu
+
+: "${CRIO_AUTHOR:=DanielDavis5}"
+: "${CRIO_RELEASE:=v1.18.0-stripfix}"
+: "${TOOLS_AUTHOR:=DanielDavis5}"
+: "${TOOLS_RELEASE:=v1.0}"
+
+usage() {
+    cat <<EOF
+Prepares sources for building.
+
+Usage: prepare [option]
+
+Options:
+    -C DIRECTORY, --directory=DIRECTORY
+                            Change to DIRECTORY before doing anything.
+    --clean                 Delete existing files.
+    -h, --help              Print this message.
+
+EOF
+    return 0
+}
+
+_download() {
+    if [ -d "$1" ]; then
+        if [ $CLEAN = false ]; then
+            echo "skipping $1"
+            return 0
+        else
+            rm -r "$1"
+        fi
+    fi
+    curl -L "https://github.com/$2/$1/archive/$3.tar.gz" -o "$3.tar.gz"
+    mkdir "$1"
+    tar -xzf "$3.tar.gz" -C "$1" --strip-components 1
+    rm "$3.tar.gz"
+}
+
+get() {
+    echo "Acquiring source files..."
+    _download cri-o $CRIO_AUTHOR $CRIO_RELEASE
+    _download tools $TOOLS_AUTHOR $TOOLS_RELEASE
+}
+
+if ! OPTS=$(getopt -o hC: -l help,directory:,clean -- "$@"); then
+    usage
+    exit 1
+fi
+
+eval set -- "$OPTS"
+
+while :; do
+    case "$1" in
+    -h | --help)
+        usage
+        exit 0
+        ;;
+
+    -C | --directory)
+        DEST="$2"
+        shift 2
+        ;;
+
+    --clean)
+        CLEAN=true
+        shift
+        ;;
+
+    --)
+        shift
+        break
+        ;;
+    esac
+done
+
+if [ $# -ne 0 ]; then
+    echo 'error: bad args, try "prepare --help"'
+    exit 1
+fi
+
+: "${DEST:=.}"
+: "${CLEAN:=false}"
+
+cd $DEST
+get
